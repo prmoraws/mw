@@ -72,52 +72,64 @@ class Dashboard extends Component
 
     public function exportData()
     {
-        \Log::info('exportData chamado', ['user_id' => auth()->id()]);
         try {
             ini_set('memory_limit', '512M');
             set_time_limit(120);
+
             $cestas = Cesta::orderBy('cestas', 'desc')->orderBy('nome', 'asc')->get();
 
-            Storage::disk('public')->makeDirectory('temp/thumbnails');
+            // Define os caminhos absolutos para o InfinityFree
+            $basePath = '/home/vol1_1/infinityfree.com/if0_38241904/moraw.ct.ws/htdocs';
+            $thumbnailDir = $basePath . '/storage/app/public/temp/thumbnails';
+            $uploadsDir = $basePath . '/uploads';
 
-            if (!class_exists('Intervention\Image\Facades\Image')) {
-                throw new \Exception('Pacote Intervention Image não está configurado corretamente');
+            // Cria diretórios necessários
+            if (!file_exists($thumbnailDir)) {
+                mkdir($thumbnailDir, 0755, true);
             }
 
-            $cestas = $cestas->map(function ($cesta) {
+            $cestas = $cestas->map(function ($cesta) use ($thumbnailDir, $uploadsDir) {
                 if (!$cesta->foto) {
+                    return $cesta;
+                }
+
+                $filename = basename($cesta->foto);
+                $originalPath = $uploadsDir . '/' . $filename;
+                $thumbnailPath = $thumbnailDir . '/' . $filename;
+
+                // Verifica se a imagem original existe
+                if (!file_exists($originalPath)) {
+                    \Log::error('Imagem original não encontrada', ['path' => $originalPath]);
                     $cesta->foto = null;
                     return $cesta;
                 }
 
-                $filename = str_replace('uploads/', '', $cesta->foto);
-                $fotoPath = base_path('uploads/' . $filename);
-                $thumbnailPath = storage_path('app/public/temp/thumbnails/' . $filename);
-
-                if (file_exists($thumbnailPath) && is_readable($thumbnailPath)) {
-                    $cesta->foto = 'temp/thumbnails/' . $filename;
-                } elseif (file_exists($fotoPath) && is_readable($fotoPath)) {
+                // Tenta criar a thumbnail se não existir
+                if (!file_exists($thumbnailPath)) {
                     try {
-                        Image::make($fotoPath)
-                            ->resize(200, 150, function ($constraint) {
-                                $constraint->aspectRatio();
-                                $constraint->upsize();
-                            })
-                            ->save($thumbnailPath, 40);
-                        $cesta->foto = 'temp/thumbnails/' . $filename;
-                        if (!file_exists($thumbnailPath)) {
-                            $cesta->foto = null;
-                        }
+                        $image = Image::make($originalPath);
+                        $image->resize(200, 150, function ($constraint) {
+                            $constraint->aspectRatio();
+                            $constraint->upsize();
+                        });
+                        $image->save($thumbnailPath, 70);
+                        chmod($thumbnailPath, 0644);
                     } catch (\Exception $e) {
-                        $cesta->foto = null;
+                        \Log::error('Erro ao criar thumbnail', [
+                            'error' => $e->getMessage(),
+                            'path' => $originalPath
+                        ]);
+                        // Usa a imagem original como fallback
+                        $thumbnailPath = $originalPath;
                     }
-                } else {
-                    $cesta->foto = null;
                 }
 
+                // Usa caminho relativo para o PDF
+                $cesta->foto = 'storage/app/public/temp/thumbnails/' . $filename;
                 return $cesta;
             });
 
+            // Configuração do PDF
             $pdf = Pdf::loadView('livewire.evento.relatorio-cestas-pdf', [
                 'cestas' => $cestas,
                 'printDate' => now()->format('d/m/Y H:i:s')
@@ -125,49 +137,28 @@ class Dashboard extends Component
                 'isRemoteEnabled' => true,
                 'dpi' => 72,
                 'enable_local_file_access' => true,
-                'chroot' => public_path('storage'),
-                'enable_javascript' => true,
+                'chroot' => $basePath,
+                'enable_javascript' => false,
                 'isPhpEnabled' => true
             ]);
 
             $pdfContent = $pdf->output();
             $filename = 'relatorio-cestas-' . now()->format('YmdHis') . '.pdf';
+            $pdfPath = $basePath . '/storage/temp/' . $filename;
 
-            // Salvar no disco public
-            Storage::disk('public')->put('temp/' . $filename, $pdfContent);
-            $storagePath = storage_path('app/public/temp/' . $filename);
-            if (file_exists($storagePath)) {
-                chmod($storagePath, 0644);
-            } else {
-                \Log::error('Falha ao salvar PDF em storage', ['path' => $storagePath]);
-                throw new \Exception('Falha ao salvar PDF');
+            // Garante que o diretório existe
+            if (!file_exists(dirname($pdfPath))) {
+                mkdir(dirname($pdfPath), 0755, true);
             }
 
-            // Copiar para public/storage
-            $publicPath = public_path('storage/temp/' . $filename);
-            if (!file_exists(dirname($publicPath))) {
-                mkdir(dirname($publicPath), 0755, true);
-            }
-            if (copy($storagePath, $publicPath)) {
-                chmod($publicPath, 0644);
-            } else {
-                \Log::error('Falha ao copiar PDF para public/storage', ['from' => $storagePath, 'to' => $publicPath]);
-                throw new \Exception('Falha ao copiar PDF');
-            }
+            file_put_contents($pdfPath, $pdfContent);
+            chmod($pdfPath, 0644);
 
-            $tempPdfs = session()->get('public_pdfs', []);
-            $tempPdfs[] = 'temp/' . $filename;
-            session()->put('public_pdfs', $tempPdfs);
-
-            $url = url('/download-pdf/' . $filename);
-            \Log::info('PDF gerado', ['url' => $url]);
-
-            $this->message = 'PDF gerado com sucesso!';
+            $url = url('/storage/temp/' . $filename);
             $this->dispatch('exportDataCompleted', url: $url);
         } catch (\Exception $e) {
             \Log::error('Erro ao gerar PDF', ['error' => $e->getMessage()]);
-            $this->message = 'Erro ao gerar o PDF: ' . $e->getMessage();
-            $this->dispatch('exportDataCompleted', error: 'Erro ao gerar o PDF: ' . $e->getMessage());
+            $this->dispatch('exportDataCompleted', error: $e->getMessage());
         }
     }
 

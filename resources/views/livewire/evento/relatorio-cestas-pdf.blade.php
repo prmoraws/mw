@@ -87,26 +87,25 @@
                     <td>
                         @if ($cesta->foto)
                             @php
-                                $imagePath = storage_path('app/public/' . $cesta->foto);
-                                $imageUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($cesta->foto);
-                                \Log::info('Verificando imagem no PDF', [
-                                    'imagePath' => $imagePath,
-                                    'imageUrl' => $imageUrl,
-                                    'fileUri' => 'file://' . $imagePath,
+                                $imagePath =
+                                    '/home/vol1_1/infinityfree.com/if0_38241904/moraw.ct.ws/htdocs/' . $cesta->foto;
+
+                                // Log para depuração
+                                \Log::info('Exibindo imagem no PDF', [
+                                    'path' => $imagePath,
                                     'exists' => file_exists($imagePath),
                                     'readable' => is_readable($imagePath),
-                                    'permissions' => file_exists($imagePath)
-                                        ? substr(sprintf('%o', fileperms($imagePath)), -4)
-                                        : 'N/A',
                                 ]);
                             @endphp
+
                             @if (file_exists($imagePath) && is_readable($imagePath))
-                                <img src="file://{{ $imagePath }}" alt="Foto">
+                                <img src="file://{{ $imagePath }}" alt="Foto"
+                                    style="max-width: 100px; max-height: 75px;">
                             @else
-                                <span class="no-photo">Sem foto</span>
+                                <span class="no-photo">Sem foto (arquivo inacessível)</span>
                             @endif
                         @else
-                            <span class="no-photo">Sem foto</span>
+                            <span class="no-photo">Sem foto cadastrada</span>
                         @endif
                     </td>
                 </tr>

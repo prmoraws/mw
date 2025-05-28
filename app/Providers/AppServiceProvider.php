@@ -23,5 +23,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function ($user, $ability) {
             return $user->hasRole('superadmin') ? true : null;
         });
+        // Configuração especial para InfinityFree
+        if (app()->environment('production')) {
+            config([
+                'filesystems.disks.public.root' => '/home/vol1_1/infinityfree.com/if0_38241904/moraw.ct.ws/htdocs/storage/app/public',
+                'filesystems.disks.public_uploads.root' => '/home/vol1_1/infinityfree.com/if0_38241904/moraw.ct.ws/htdocs/uploads'
+            ]);
+        }
     }
 }
